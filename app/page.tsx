@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { RegisterFaceModal } from "@/components/register-face-modal"
+import { AttendanceList } from "@/components/attendance-list"
 
 export default function Dashboard() {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -24,6 +25,7 @@ export default function Dashboard() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [isManualDetecting, setIsManualDetecting] = useState(false)
   const [detectionHistory, setDetectionHistory] = useState<string[]>([])
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([])
 
   // Update time every second
   useEffect(() => {
@@ -34,15 +36,40 @@ export default function Dashboard() {
     return () => clearInterval(timer)
   }, [])
 
-  // Initialize camera on component mount
-  useEffect(() => {
-    startCamera()
-    return () => {
-      stopCamera()
-      if (detectionInterval) {
-        clearInterval(detectionInterval)
+  // Fetch attendance records function
+  const fetchAttendanceRecords = async (roomId?: string) => {
+    try {
+      const url = new URL("/api/get-attendance", window.location.origin);
+      if (roomId) {
+        url.searchParams.append("roomId", roomId);
       }
+      
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        throw new Error(`Failed to fetch attendance: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.success && data.attendanceRecords) {
+        setAttendanceRecords(data.attendanceRecords);
+        console.log("Fetched attendance records:", data.attendanceRecords);
+      }
+    } catch (error) {
+      console.error("Error fetching attendance:", error);
     }
+  }
+
+  // Initialize camera and fetch attendance on component mount
+  useEffect(() => {
+    startCamera();
+    fetchAttendanceRecords("7e20a2de-3aa8-11f0-8493-0242ac160002"); // Fetch for Event 27th May
+    
+    return () => {
+      stopCamera();
+      if (detectionInterval) {
+        clearInterval(detectionInterval);
+      }
+    };
   }, [])
 
   const startCamera = async () => {
@@ -158,10 +185,15 @@ export default function Dashboard() {
       console.log("Sending image to detection API...")
       setDetectionHistory((prev) => [`${new Date().toLocaleTimeString()}: Analyzing frame...`, ...prev.slice(0, 4)])
 
-      const response = await fetch("/api/detect-face", {
+      // Use the new v2 endpoint that correctly implements Luxand face recognition
+      // Pass the roomId for Event 27th May to enable automatic attendance recording
+      const response = await fetch("/api/detect-face-v2", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: imageData }),
+        body: JSON.stringify({ 
+          image: imageData,
+          roomId: "7e20a2de-3aa8-11f0-8493-0242ac160002" // Event 27th May room ID
+        }),
       })
 
       if (!response.ok) {
@@ -175,10 +207,30 @@ export default function Dashboard() {
       if (result.recognized && result.user) {
         setRecognizedUser(result.user)
         setLastDetectionResult(result)
+        
+        let statusMessage = `✅ Recognized ${result.user}`
+        
+        if (result.luxandResult && result.luxandResult.length > 0) {
+          const match = result.luxandResult[0]
+          if (match.probability !== undefined) {
+            const confidence = (match.probability * 100).toFixed(2)
+            statusMessage += ` (${confidence}% confidence)`
+          }
+          if (match.uuid) {
+            statusMessage += ` [UUID: ${match.uuid}]`
+          }
+        }
+        
         setDetectionHistory((prev) => [
-          `${new Date().toLocaleTimeString()}: ✅ Recognized ${result.user}`,
+          `${new Date().toLocaleTimeString()}: ${statusMessage}`,
           ...prev.slice(0, 4),
         ])
+        
+        // If attendance was recorded, refresh the attendance list
+        if (result.attendanceRecorded) {
+          fetchAttendanceRecords("7e20a2de-3aa8-11f0-8493-0242ac160002")
+        }
+        
         await generateGreeting(result.user, true)
         setShowRegisterModal(false)
       } else if (result.faceDetected && !result.recognized) {
@@ -627,6 +679,9 @@ export default function Dashboard() {
                 )}
               </CardContent>
             </Card>
+            
+            {/* Attendance Records */}
+            <AttendanceList />
           </div>
         </div>
       </div>

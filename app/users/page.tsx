@@ -73,25 +73,57 @@ export default function UsersPage() {
 
       const imageData = canvas.toDataURL("image/jpeg", 0.8)
 
-      // Save to MongoDB via API
+      // First, register the face with Luxand API via our API endpoint
+      const luxandResponse = await fetch("/api/register-face", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: imageData,
+          name: newUserName.trim(),
+          store: "1",           // Use default store
+          collections: "",      // No specific collections
+          unique: "0"           // Allow duplicates
+        }),
+      })
+
+      if (!luxandResponse.ok) {
+        const errorText = await luxandResponse.text();
+        console.error("Luxand API error response:", errorText);
+        let errorMessage;
+        
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorJson.message || "Luxand registration failed";
+        } catch (parseError) {
+          errorMessage = errorText || "Luxand registration failed";
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      // Now safe to parse JSON response
+      const luxandResult = await luxandResponse.json();
+      
+      console.log("Luxand registration successful:", luxandResult)
+      
       const response = await fetch("/api/face-detection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           face: imageData,
           name: newUserName.trim(),
-          // Optionally add age, code, etc.
+          luxandPersonId: luxandResult.luxandPersonId || luxandResult.id,
         }),
       })
 
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || "Registration failed")
+        throw new Error(result.error || "MongoDB registration failed")
       }
 
       setNewUserName("")
-      alert(`User ${result.data.name} added successfully!`)
+      alert(`User ${result.data.name} added successfully to both Luxand and MongoDB!`)
 
       // Refetch users from MongoDB
       const res = await fetch("/api/face-detection")

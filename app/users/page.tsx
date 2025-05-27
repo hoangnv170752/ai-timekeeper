@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Camera, UserPlus, Users, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,11 +12,23 @@ export default function UsersPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [newUserName, setNewUserName] = useState("")
   const [isCapturing, setIsCapturing] = useState(false)
-  const [users, setUsers] = useState([
-    { id: "1", name: "John Doe", faceId: "face_001", addedAt: "2024-01-15" },
-    { id: "2", name: "Jane Smith", faceId: "face_002", addedAt: "2024-01-16" },
-    { id: "3", name: "Mike Johnson", faceId: "face_003", addedAt: "2024-01-17" },
-  ])
+  const [users, setUsers] = useState<any[]>([])
+  const [showFacesModal, setShowFacesModal] = useState(false)
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await fetch("/api/face-detection")
+        const data = await res.json()
+        if (data.success) {
+          setUsers(data.data)
+        }
+      } catch (error) {
+        // Optionally handle error
+      }
+    }
+    fetchUsers()
+  }, [])
 
   const startCamera = async () => {
     try {
@@ -26,7 +38,7 @@ export default function UsersPage() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error accessing camera:", error)
     }
   }
@@ -61,35 +73,33 @@ export default function UsersPage() {
 
       const imageData = canvas.toDataURL("image/jpeg", 0.8)
 
-      // Use the same API route as the registration modal
-      const response = await fetch("/api/register-face", {
+      // Save to MongoDB via API
+      const response = await fetch("/api/face-detection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          image: imageData,
+          face: imageData,
           name: newUserName.trim(),
+          // Optionally add age, code, etc.
         }),
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Registration failed")
-      }
-
       const result = await response.json()
 
-      // Add to local state (in real app, save to database)
-      const newUser = {
-        id: result.user.id,
-        name: result.user.name,
-        faceId: result.user.faceId,
-        addedAt: new Date().toISOString().split("T")[0],
+      if (!response.ok) {
+        throw new Error(result.error || "Registration failed")
       }
 
-      setUsers((prev) => [...prev, newUser])
       setNewUserName("")
-      alert(`User ${newUser.name} added successfully!`)
-    } catch (error) {
+      alert(`User ${result.data.name} added successfully!`)
+
+      // Refetch users from MongoDB
+      const res = await fetch("/api/face-detection")
+      const data = await res.json()
+      if (data.success) {
+        setUsers(data.data)
+      }
+    } catch (error: any) {
       console.error("Error adding user:", error)
       alert(`Error adding user: ${error.message}`)
     } finally {
@@ -98,29 +108,30 @@ export default function UsersPage() {
   }
 
   const removeUser = (userId: string) => {
-    setUsers((prev) => prev.filter((user) => user.id !== userId))
+    setUsers((prev) => prev.filter((user) => user._id !== userId))
   }
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-100 p-4 min-h-full">
-      <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-900 dark:to-zinc-800 min-h-screen flex flex-col">
+      <div className="max-w-6xl w-full mx-auto flex-1 flex flex-col p-2 sm:p-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
           {/* Add New User */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-foreground dark:text-gray-100">
                 <UserPlus className="w-5 h-5" />
                 Add New User
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="userName">User Name</Label>
+                <Label htmlFor="userName" className="text-foreground dark:text-gray-200">User Name</Label>
                 <Input
                   id="userName"
                   value={newUserName}
                   onChange={(e) => setNewUserName(e.target.value)}
                   placeholder="Enter user name"
+                  className="text-foreground dark:text-gray-100"
                 />
               </div>
 
@@ -150,7 +161,7 @@ export default function UsersPage() {
           {/* User List */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-foreground dark:text-gray-100">
                 <Users className="w-5 h-5" />
                 Registered Users ({users.length})
               </CardTitle>
@@ -158,86 +169,111 @@ export default function UsersPage() {
             <CardContent>
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {users.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="font-medium">{user.name}</div>
-                      <div className="text-sm text-gray-500">Added: {user.addedAt}</div>
+                  <div key={user._id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-zinc-800 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      {user.face && (
+                        <img
+                          src={user.face}
+                          alt={user.name}
+                          className="w-10 h-10 rounded-full object-cover border border-gray-300 dark:border-gray-700"
+                        />
+                      )}
+                      <div>
+                        <div className="font-medium text-foreground dark:text-gray-100">{user.name}</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-300">Added: {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : ''}</div>
+                      </div>
                     </div>
-                    <Button onClick={() => removeUser(user.id)} variant="destructive" size="sm">
+                    <Button onClick={() => removeUser(user._id)} variant="destructive" size="sm">
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
                 ))}
 
-                {users.length === 0 && <div className="text-center py-8 text-gray-500">No users registered yet</div>}
+                {users.length === 0 && <div className="text-center py-8 text-gray-500 dark:text-gray-300">No users registered yet</div>}
               </div>
             </CardContent>
           </Card>
 
-          {/* Debug Panel */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Camera className="w-5 h-5" />
-                Debug & Testing
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Button
-                  onClick={async () => {
-                    try {
-                      const response = await fetch("/api/test-luxand")
-                      const result = await response.json()
-                      if (result.success) {
-                        alert("✅ Luxand API connection successful!")
-                      } else {
-                        alert(`❌ Luxand API test failed: ${result.error}`)
+          {/* Debug Panel - only show in development */}
+          {process.env.NODE_ENV !== 'production' && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-foreground dark:text-gray-100">
+                  <Camera className="w-5 h-5" />
+                  Debug & Testing
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const response = await fetch("/api/test-luxand")
+                        const result = await response.json()
+                        if (result.success) {
+                          alert("✅ Luxand API connection successful!")
+                        } else {
+                          alert(`❌ Luxand API test failed: ${result.error}`)
+                        }
+                      } catch (error: any) {
+                        alert(`❌ Test failed: ${error.message}`)
                       }
-                    } catch (error) {
-                      alert(`❌ Test failed: ${error.message}`)
-                    }
-                  }}
-                  variant="outline"
-                >
-                  Test Luxand Connection
-                </Button>
+                    }}
+                    variant="outline"
+                  >
+                    Test Luxand Connection
+                  </Button>
 
-                <Button
-                  onClick={async () => {
-                    try {
-                      const response = await fetch("/api/test-luxand")
-                      const result = await response.json()
-                      if (result.success) {
-                        alert(`✅ Luxand API connected! Found ${result.subjectCount} registered faces.`)
-                      } else {
-                        alert(`❌ Luxand API test failed: ${result.error}`)
-                      }
-                    } catch (error) {
-                      alert(`❌ Test failed: ${error.message}`)
-                    }
-                  }}
-                  variant="outline"
-                >
-                  List Registered Faces
-                </Button>
-              </div>
+                  <Button
+                    onClick={() => setShowFacesModal(true)}
+                    variant="outline"
+                  >
+                    List Registered Faces
+                  </Button>
+                </div>
 
-              <div className="text-sm text-gray-600">
-                <p>
-                  <strong>Troubleshooting Tips:</strong>
-                </p>
-                <ul className="list-disc list-inside space-y-1 mt-2">
-                  <li>Ensure your face is well-lit and clearly visible</li>
-                  <li>Look directly at the camera</li>
-                  <li>Make sure the Luxand API key is correctly set</li>
-                  <li>Check browser console for detailed error messages</li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="text-sm text-gray-600 dark:text-gray-300">
+                  <p>
+                    <strong>Troubleshooting Tips:</strong>
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 mt-2">
+                    <li>Ensure your face is well-lit and clearly visible</li>
+                    <li>Look directly at the camera</li>
+                    <li>Make sure the Luxand API key is correctly set</li>
+                    <li>Check browser console for detailed error messages</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
+
+      {showFacesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-lg p-6 max-w-lg w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Registered Faces</h2>
+              <Button size="sm" variant="outline" onClick={() => setShowFacesModal(false)}>Close</Button>
+            </div>
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {users.length === 0 && <div className="text-gray-500 dark:text-gray-300">No users registered yet</div>}
+              {users.map((user) => (
+                <div key={user._id} className="flex items-center gap-3 p-2 border-b border-gray-200 dark:border-gray-700">
+                  {user.face && (
+                    <img src={user.face} alt={user.name} className="w-10 h-10 rounded-full object-cover border border-gray-300 dark:border-gray-700" />
+                  )}
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-gray-100">{user.name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-300">Added: {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : ''}</div>
+                    {user.code && <div className="text-xs text-gray-400">Code: {user.code}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

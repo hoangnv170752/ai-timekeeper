@@ -72,7 +72,7 @@ export default function Dashboard() {
         // Add to detection history
         setDetectionHistory((prev) => [`${new Date().toLocaleTimeString()}: Camera started`, ...prev.slice(0, 4)])
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error accessing camera:", error)
       setIsCameraActive(false)
       setDetectionHistory((prev) => [
@@ -173,17 +173,17 @@ export default function Dashboard() {
       setLastDetectionResult(result)
 
       if (result.recognized && result.user) {
-        console.log(`User recognized: ${result.user}`)
         setRecognizedUser(result.user)
+        setLastDetectionResult(result)
         setDetectionHistory((prev) => [
           `${new Date().toLocaleTimeString()}: ✅ Recognized ${result.user}`,
           ...prev.slice(0, 4),
         ])
-        await generateGreeting(result.user)
+        await generateGreeting(result.user, true)
         setShowRegisterModal(false)
       } else if (result.faceDetected && !result.recognized) {
-        console.log("Unknown face detected")
         setRecognizedUser(null)
+        setLastDetectionResult(result)
         setGreeting("")
         setCapturedImageForRegistration(imageData)
         setDetectionHistory((prev) => [
@@ -192,19 +192,21 @@ export default function Dashboard() {
         ])
         setShowRegisterModal(true)
       } else if (result.error) {
-        console.log("Detection error:", result.error)
+        setRecognizedUser(null)
+        setLastDetectionResult(result)
         setDetectionHistory((prev) => [
           `${new Date().toLocaleTimeString()}: ❌ Error: ${result.error}`,
           ...prev.slice(0, 4),
         ])
       } else {
-        console.log("No face detected")
         setRecognizedUser(null)
+        setLastDetectionResult(result)
         setGreeting("")
         setShowRegisterModal(false)
         setDetectionHistory((prev) => [`${new Date().toLocaleTimeString()}: 🔍 No face detected`, ...prev.slice(0, 4)])
+        await generateGreeting("", false)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Face detection error:", error)
       setLastDetectionResult({ error: error.message })
       setDetectionHistory((prev) => [
@@ -218,13 +220,17 @@ export default function Dashboard() {
     }
   }
 
-  const generateGreeting = async (userName: string) => {
+  const generateGreeting = async (userName: string, isDetected: boolean) => {
     setIsGeneratingGreeting(true)
     try {
       const response = await fetch("/api/generate-greeting", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userName, time: new Date().toISOString() }),
+        body: JSON.stringify({ 
+          userName, 
+          time: new Date().toISOString(),
+          isDetected 
+        }),
       })
 
       const result = await response.json()
@@ -232,7 +238,7 @@ export default function Dashboard() {
 
       // Auto-play the greeting
       await speakGreeting(result.greeting)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Greeting generation error:", error)
     } finally {
       setIsGeneratingGreeting(false)
@@ -262,7 +268,7 @@ export default function Dashboard() {
 
         await audio.play()
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Text-to-speech error:", error)
       setIsSpeaking(false)
     }
@@ -293,11 +299,11 @@ export default function Dashboard() {
       setDetectionHistory((prev) => [`${new Date().toLocaleTimeString()}: ✅ Registered ${name}`, ...prev.slice(0, 4)])
 
       // Generate a welcome greeting for the new user
-      await generateGreeting(name)
+      await generateGreeting(name, true)
       setRecognizedUser(name)
 
       return result
-    } catch (error) {
+    } catch (error: any) {
       console.error("Registration error:", error)
       setDetectionHistory((prev) => [
         `${new Date().toLocaleTimeString()}: ❌ Registration failed: ${error.message}`,
@@ -350,16 +356,16 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-100 p-4 min-h-full">
-      <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-900 dark:to-zinc-800 min-h-screen flex flex-col">
+      <div className="max-w-7xl w-full mx-auto flex-1 flex flex-col p-2 sm:p-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
           {/* Main Camera View */}
           <div className="lg:col-span-2">
             <Card className="h-full">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Camera className="w-5 h-5" />
-                  Live Camera Feed
+                  Live Camera
                   <Badge variant={isCameraActive ? "default" : "secondary"} className="ml-auto">
                     {isCameraActive ? "Active" : "Inactive"}
                   </Badge>
@@ -463,7 +469,7 @@ export default function Dashboard() {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
+          <div className="space-y-6 mt-6 lg:mt-0">
             {/* Current Time */}
             <Card>
               <CardHeader>
@@ -566,7 +572,13 @@ export default function Dashboard() {
                 <CardTitle className="flex items-center gap-2">
                   <Mic className="w-5 h-5" />
                   AI Greeting
-                  {isSpeaking && <MicOff className="w-4 h-4 text-green-500" />}
+                  {isSpeaking && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" style={{ animationDelay: "0.2s" }}></div>
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" style={{ animationDelay: "0.4s" }}></div>
+                    </div>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -577,26 +589,47 @@ export default function Dashboard() {
                   </div>
                 ) : greeting ? (
                   <div className="space-y-3">
-                    <p className="text-sm">{greeting}</p>
+                    <div className="relative">
+                      <p className="text-sm transition-opacity duration-300">{greeting}</p>
+                      {isSpeaking && (
+                        <div className="absolute -right-2 -top-2 w-3 h-3 bg-green-500 rounded-full animate-ping opacity-75"></div>
+                      )}
+                    </div>
                     <Button
                       onClick={() => speakGreeting(greeting)}
                       variant="outline"
                       size="sm"
                       disabled={isSpeaking}
-                      className="w-full"
+                      className="w-full transition-all duration-300 hover:scale-105"
                     >
-                      {isSpeaking ? "Speaking..." : "Replay Greeting"}
+                      {isSpeaking ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                          <span>Speaking...</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Mic className="w-4 h-4" />
+                          <span>Replay Greeting</span>
+                        </div>
+                      )}
                     </Button>
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-500">Greeting will appear when a user is recognized</p>
+                  <div className="text-center py-4">
+                    <p className="text-sm text-gray-500">Greeting will appear when a user is recognized</p>
+                    <div className="mt-2 flex justify-center gap-1">
+                      <div className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "0s" }}></div>
+                      <div className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+                      <div className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                    </div>
+                  </div>
                 )}
               </CardContent>
             </Card>
           </div>
         </div>
       </div>
-
       {/* Registration Modal */}
       <RegisterFaceModal
         isOpen={showRegisterModal}

@@ -42,7 +42,7 @@ export async function GET() {
     console.error("Luxand test error:", error)
     return NextResponse.json(
       {
-        error: `Luxand test failed: ${error.message}`,
+        error: `Luxand test failed: ${error instanceof Error ? error.message : String(error)}`,
       },
       { status: 500 },
     )

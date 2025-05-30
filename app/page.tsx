@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { RegisterFaceModal } from "@/components/register-face-modal"
 import { AttendanceList } from "@/components/attendance-list"
+import { RoomAttendance } from "@/components/room-attendance"
 
 export default function Dashboard() {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -202,6 +203,39 @@ export default function Dashboard() {
 
       const result = await response.json()
       console.log("Detection result:", result)
+      
+      if (result.luxandResult) {
+        if (Array.isArray(result.luxandResult)) {
+          console.log("Processing array format Luxand result");
+          result.luxandProcessedResult = result.luxandResult.map((match: any) => ({
+            name: match.name,
+            probability: match.probability,
+            uuid: match.uuid,
+            rectangle: match.rectangle || null
+          }));
+        }
+        else if (result.luxandResult.faces && result.luxandResult.faces.length > 0) {
+          console.log("Processing faces array format Luxand result");
+          const faceWithMatches = result.luxandResult.faces.find((face: any) => 
+            face.status === "success" && face.matches && face.matches.length > 0
+          );
+          
+          if (faceWithMatches && faceWithMatches.matches && faceWithMatches.matches.length > 0) {
+            result.luxandProcessedResult = faceWithMatches.matches.map((match: any) => ({
+              name: match.name,
+              probability: match.similarity,
+              uuid: match.person_id,
+              rectangle: faceWithMatches.bbox ? {
+                left: faceWithMatches.bbox.x,
+                top: faceWithMatches.bbox.y,
+                right: faceWithMatches.bbox.x + faceWithMatches.bbox.width,
+                bottom: faceWithMatches.bbox.y + faceWithMatches.bbox.height
+              } : null
+            }));
+          }
+        }
+      }
+      
       setLastDetectionResult(result)
 
       if (result.recognized && result.user) {
@@ -381,8 +415,8 @@ export default function Dashboard() {
       }
 
       console.log("Starting detection loop...")
-      setDetectionHistory((prev) => [`${new Date().toLocaleTimeString()}: Auto-detection started`, ...prev.slice(0, 4)])
-      const interval = setInterval(() => detectFace(false), 3000) // Check every 3 seconds
+      setDetectionHistory((prev) => [`${new Date().toLocaleTimeString()}: Auto-detection started (10 second interval)`, ...prev.slice(0, 4)])
+      const interval = setInterval(() => detectFace(false), 10000) // Check every 10 seconds
       setDetectionInterval(interval)
       setIsDetecting(true)
 
@@ -513,7 +547,7 @@ export default function Dashboard() {
                     <strong>Manual Detect:</strong> Captures one frame and checks for faces immediately
                   </p>
                   <p>
-                    <strong>Auto-Detection:</strong> Continuously checks for faces every 3 seconds
+                    <strong>Auto-Detection:</strong> Continuously checks for faces every 10 seconds
                   </p>
                 </div>
               </CardContent>
@@ -604,19 +638,20 @@ export default function Dashboard() {
                 <CardTitle>Detection History</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
+                <div className="space-y-2">
                   {detectionHistory.length > 0 ? (
                     detectionHistory.map((entry, index) => (
-                      <div key={index} className="text-xs text-gray-600 font-mono">
-                        {entry}
-                      </div>
+                      <div key={index} className="text-sm">{entry}</div>
                     ))
                   ) : (
-                    <p className="text-sm text-gray-500">No detection history yet</p>
+                    <div className="text-sm text-gray-500">No detection history yet</div>
                   )}
                 </div>
               </CardContent>
             </Card>
+
+            {/* Room Attendance from Luxand API */}
+            <RoomAttendance />
 
             {/* AI Greeting */}
             <Card>

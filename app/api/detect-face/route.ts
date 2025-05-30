@@ -14,9 +14,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
 
-    // Convert base64 to blob for Luxand API
-    const base64Data = image.replace(/^data:image\/(png|jpeg|jpg);base64,/, "");
-    const imageBlob = Buffer.from(base64Data, "base64");
+    // Convert base64 to buffer for Luxand API
+    // Make sure to handle both formats with and without data URI prefix
+    let base64Data = image;
+    if (base64Data.startsWith('data:')) {
+      base64Data = base64Data.replace(/^data:image\/\w+;base64,/, "");
+    }
+    const imageBuffer = Buffer.from(base64Data, "base64");
 
     // Call Luxand API to recognize faces in the image using the correct endpoint
     console.log("Calling Luxand API for face search...");
@@ -31,7 +35,7 @@ export async function POST(request: NextRequest) {
     
     const body = Buffer.concat([
       Buffer.from(header, 'utf8'),
-      imageBlob,
+      imageBuffer,
       Buffer.from(footer, 'utf8')
     ]);
     
@@ -60,19 +64,57 @@ export async function POST(request: NextRequest) {
     const recognizeResult = await recognizeResponse.json();
     console.log("Luxand recognition result:", JSON.stringify(recognizeResult));
 
-    // Check if any faces were detected based on the photo/search/v2 response format
-    if (!recognizeResult || !recognizeResult.faces || recognizeResult.faces.length === 0) {
+    console.log("Full Luxand API response:", JSON.stringify(recognizeResult, null, 2));
+    
+    if (!recognizeResult) {
+      return NextResponse.json({
+        recognized: false,
+        faceDetected: false,
+        message: "Invalid response from Luxand API",
+        canRegister: false,
+        debug: { received: typeof recognizeResult }
+      });
+    }
+    
+    if (recognizeResult.status && recognizeResult.status === 'failure') {
+      return NextResponse.json({
+        recognized: false,
+        faceDetected: false,
+        message: recognizeResult.message || "Luxand API reported failure",
+        canRegister: false,
+        debug: { luxandResponse: recognizeResult }
+      });
+    }
+    
+    if (!recognizeResult.faces || !Array.isArray(recognizeResult.faces) || recognizeResult.faces.length === 0) {
+      if (recognizeResult.bbox) {
+        return NextResponse.json({
+          recognized: false,
+          faceDetected: true,
+          message: "Face detected but not recognized",
+          canRegister: true,
+          faceLocation: recognizeResult.bbox
+        });
+      }
+      
       return NextResponse.json({
         recognized: false,
         faceDetected: false,
         message: "No faces detected in the image",
         canRegister: false,
+        debug: { luxandResponse: recognizeResult }
       });
     }
 
     // Check if any of the detected faces were recognized
     // The photo/search/v2 endpoint returns a different structure with a faces array
-    const recognizedFace = recognizeResult.faces.find((face: any) => face.status === "success" && face.matches && face.matches.length > 0);
+    // Only consider it a match if the similarity/probability is greater than 95%
+    const recognizedFace = recognizeResult.faces.find((face: any) => 
+      face.status === "success" && 
+      face.matches && 
+      face.matches.length > 0 && 
+      face.matches[0].similarity > 0.95 // Only consider matches with probability > 95%
+    );
 
     if (recognizedFace && recognizedFace.matches && recognizedFace.matches.length > 0) {
       // Extract the best match information

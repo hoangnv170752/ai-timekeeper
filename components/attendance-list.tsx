@@ -13,6 +13,7 @@ interface AttendanceRecord {
   checkinTime: string
   note: string
   timestamp: string
+  isCheckOut?: boolean
 }
 
 export function AttendanceList({ roomId = "7e20a2de-3aa8-11f0-8493-0242ac160002" }) {
@@ -72,8 +73,11 @@ export function AttendanceList({ roomId = "7e20a2de-3aa8-11f0-8493-0242ac160002"
                     {new Date(record.checkinTime).toLocaleString()}
                   </div>
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  {record.note?.includes("7e20a2de-3aa8-11f0-8493-0242ac160002") ? "Event 27th May" : "Check-in"}
+                <Badge 
+                  variant={record.isCheckOut ? "destructive" : "default"} 
+                  className="text-xs"
+                >
+                  {record.isCheckOut ? "Check-out" : "Check-in"}
                 </Badge>
               </div>
             ))}

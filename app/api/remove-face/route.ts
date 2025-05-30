@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     console.error("Remove face error:", error)
     return NextResponse.json(
       {
-        error: `Failed to remove face: ${error.message}`,
+        error: `Failed to remove face: ${error instanceof Error ? error.message : String(error)}`,
       },
       { status: 500 },
     )

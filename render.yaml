@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ai-timekeeper
+    env: node
+    buildCommand: chmod +x ./build.sh && ./build.sh
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 20.0.0
+    autoDeploy: true
